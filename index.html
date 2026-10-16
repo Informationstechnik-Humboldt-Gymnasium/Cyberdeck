@@ -1,0 +1,886 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cyberdeck 3D-Modell</title>
+<meta name="description" content="Interaktives 3D-Modell des geplanten Cyberdecks der IT-AG am Humboldt-Gymnasium: Koffer drehen, öffnen und alle Komponenten ansehen.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0b0f0d;
+    --panel: rgba(14, 20, 17, 0.88);
+    --panel-solid: #0e1411;
+    --line: #1f2b25;
+    --text: #d9e8df;
+    --muted: #7d9488;
+    --accent: #39ff88;
+    --accent-dim: #1d7a47;
+    --warn: #ffcc33;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: "Space Grotesk", system-ui, sans-serif; overflow: hidden; }
+  #scene { position: fixed; inset: 0; display: block; touch-action: none; }
+
+  header {
+    position: fixed; top: 16px; left: 16px; right: 16px; pointer-events: none;
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
+  }
+  .brand { pointer-events: auto; }
+  .brand h1 { margin: 0; font-family: "JetBrains Mono", monospace; font-size: clamp(18px, 3vw, 26px); letter-spacing: 0.04em; }
+  .brand h1 span { color: var(--accent); }
+  .brand p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; pointer-events: auto; }
+  .controls button {
+    font: 600 13px "JetBrains Mono", monospace; color: var(--text); background: var(--panel);
+    border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; cursor: pointer;
+    backdrop-filter: blur(8px); transition: border-color .15s, color .15s;
+  }
+  .controls button:hover { border-color: var(--accent-dim); }
+  .controls button[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
+
+  aside#parts {
+    position: fixed; left: 16px; bottom: 16px; width: 270px; max-height: calc(100% - 140px); overflow: auto;
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; backdrop-filter: blur(8px);
+  }
+  aside#parts h2, #info h2 { margin: 0 0 10px; font: 700 12px "JetBrains Mono", monospace; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  #partList { list-style: none; margin: 0; padding: 0; }
+  #partList li {
+    display: flex; justify-content: space-between; gap: 8px; padding: 7px 8px; border-radius: 8px; cursor: pointer; font-size: 14px;
+  }
+  #partList li:hover { background: rgba(57,255,136,.06); }
+  #partList li.active { background: rgba(57,255,136,.12); color: var(--accent); }
+  #partList li .price { font-family: "JetBrains Mono", monospace; font-size: 12px; color: var(--muted); white-space: nowrap; }
+  #partList li.optional .name::after { content: " (optional)"; color: var(--warn); font-size: 11px; }
+  .total { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); display: flex; justify-content: space-between; font-family: "JetBrains Mono", monospace; font-size: 13px; }
+  .total b { color: var(--accent); }
+
+  #info {
+    position: fixed; right: 16px; bottom: 16px; width: 330px; max-height: calc(100% - 140px); overflow: auto;
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; backdrop-filter: blur(8px);
+    transition: opacity .2s, transform .2s;
+  }
+  #info.hidden { opacity: 0; transform: translateY(10px); pointer-events: none; }
+  #info h3 { margin: 0 0 4px; font-size: 20px; }
+  #info .tag { display: inline-block; font: 600 11px "JetBrains Mono", monospace; color: var(--bg); background: var(--accent); padding: 2px 8px; border-radius: 999px; margin-bottom: 10px; }
+  #info .tag.opt { background: var(--warn); }
+  #info p { margin: 0 0 10px; line-height: 1.5; font-size: 14px; color: #c3d4ca; }
+  #info dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0 0 10px; font-size: 13px; }
+  #info dt { color: var(--muted); }
+  #info dd { margin: 0; font-family: "JetBrains Mono", monospace; }
+  #info .tip { border-left: 3px solid var(--warn); padding: 6px 10px; background: rgba(255,204,51,.06); font-size: 13px; border-radius: 0 6px 6px 0; }
+  #info .close { position: absolute; top: 10px; right: 10px; background: none; border: 0; color: var(--muted); font-size: 20px; cursor: pointer; }
+
+  #tooltip {
+    position: fixed; pointer-events: none; font: 600 12px "JetBrains Mono", monospace; color: var(--bg); background: var(--accent);
+    padding: 4px 8px; border-radius: 6px; transform: translate(12px, 12px); display: none; white-space: nowrap;
+  }
+  #hint { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); color: var(--muted); font-size: 12px; font-family: "JetBrains Mono", monospace; pointer-events: none; text-align: center; }
+  #loading { position: fixed; inset: 0; display: grid; place-items: center; font-family: "JetBrains Mono", monospace; color: var(--accent); }
+
+  @media (max-width: 760px) {
+    header { flex-direction: column; }
+    .controls { justify-content: flex-start; }
+    aside#parts { display: none; }
+    #info { left: 16px; right: 16px; width: auto; max-height: 45%; }
+    #hint { display: none; }
+  }
+</style>
+</head>
+<body>
+<div id="loading">&gt; lade Modell_</div>
+<canvas id="scene"></canvas>
+
+<header>
+  <div class="brand">
+    <h1>CYBER<span>DECK</span>_</h1>
+    <p>IT-AG · Humboldt-Gymnasium · Planungsmodell v1</p>
+  </div>
+  <div class="controls">
+    <button id="btnLid" aria-pressed="true">Deckel offen</button>
+    <button id="btnExplode" aria-pressed="false">Innenleben</button>
+    <button id="btnXray" aria-pressed="false">Röntgen</button>
+    <button id="btnRotate" aria-pressed="true">Auto-Drehen</button>
+    <button id="btnReset">Ansicht zurück</button>
+  </div>
+</header>
+
+<aside id="parts">
+  <h2>Komponenten</h2>
+  <ul id="partList"></ul>
+  <div class="total"><span>Gesamt ca.</span><b id="total"></b></div>
+  <div class="total" style="border:0;padding-top:4px;margin-top:0"><span>pro Person (2)</span><span id="perPerson"></span></div>
+</aside>
+
+<section id="info" class="hidden" aria-live="polite">
+  <button class="close" aria-label="Schließen">×</button>
+  <div id="infoBody"></div>
+</section>
+
+<div id="tooltip"></div>
+<div id="hint">Ziehen = drehen · Scrollen = zoomen · Klick auf ein Teil = Details</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+
+/* ------------------------------------------------------------------
+   Komponenten-Daten (Maße in cm, Preise in €)
+------------------------------------------------------------------- */
+const PARTS = {
+  case: {
+    name: "Koffer", price: [15, 30],
+    desc: "Kunststoff-Werkzeugkoffer aus dem Baumarkt. Im Deckel sitzt der Bildschirm, unten liegen Tastatur und Bedienpanel auf einem Zwischenboden, darunter versteckt sich die Technik.",
+    specs: { "Außen": "ca. 38 × 28 × 16 cm", "Innen": "mind. 35 × 25 × 10 cm", "Material": "ABS/PP-Kunststoff" },
+    tip: "Monitor und Tastatur mit in den Laden nehmen und ausprobieren, ob alles reinpasst."
+  },
+  monitor: {
+    name: "Bildschirm 10,1\"", price: [45, 55],
+    desc: "10,1-Zoll-HDMI-Monitor, wie er für Überwachungskameras oder Autos verkauft wird. Wird im Deckel festgeschraubt, damit er beim Aufklappen wie bei einem Laptop vor dir steht.",
+    specs: { "Diagonale": "10,1\" (25,7 cm)", "Auflösung": "mind. 1280 × 800", "Eingang": "HDMI", "Strom": "12 V" },
+    tip: "Modelle mit nur 1024 × 600 sind für Kali zu eng – auf die Auflösung achten."
+  },
+  keyboard: {
+    name: "Mini-Tastatur", price: [15, 25],
+    desc: "Kompakte kabelgebundene Tastatur mit eingebautem Touchpad, dadurch braucht ihr keine extra Maus. Liegt vorne auf dem Zwischenboden.",
+    specs: { "Größe": "ca. 29 × 12 cm", "Anschluss": "USB (kabelgebunden)", "Extra": "Touchpad" },
+    tip: "Kabelgebunden ist im Koffer zuverlässiger als Bluetooth – kein Akku, kein Pairing."
+  },
+  zbox: {
+    name: "ZOTAC ZBOX CI320 nano", price: [0, 0],
+    desc: "Das Herz des Cyberdecks – schon vorhanden! Passiv gekühlter Mini-PC ohne Lüfter, also völlig lautlos. Auf ihm läuft Kali Linux.",
+    specs: { "CPU": "Intel Celeron N2930, 4 Kerne", "RAM": "8 GB DDR3L", "SSD": "250 GB SATA", "Ports": "4× USB 3.0, HDMI, DP", "Netzteil": "19,5 V / 3,42 A", "Verbrauch": "ca. 10–15 W" },
+    tip: "Das Gehäuse ist der Kühlkörper – rundherum Luft lassen, sonst drosselt die CPU."
+  },
+  powerbank: {
+    name: "Powerbank 100 W", price: [40, 60],
+    desc: "USB-C-Powerbank mit Power Delivery. Versorgt den Mini-PC (20 V) und den Bildschirm (12 V) gleichzeitig über zwei USB-C-Ausgänge.",
+    specs: { "Kapazität": "20.000 mAh (~72 Wh)", "Leistung": "mind. 65 W, besser 100 W", "Ausgänge": "2× USB-C PD", "Laufzeit": "ca. 4–5 Std." },
+    tip: "Mit Pass-Through-Charging läuft das Deck auch an der Steckdose, ohne umzustecken."
+  },
+  trigger20: {
+    name: "Triggerkabel 20 V", price: [8, 10],
+    desc: "USB-C-PD-Triggerkabel, das der Powerbank 20 V abverlangt und in den Hohlstecker des ZBOX geht. Ersetzt unterwegs das originale Netzteil.",
+    specs: { "Eingang": "USB-C PD", "Ausgang": "20 V Hohlstecker", "Stecker": "vermutl. 5,5 × 2,5 mm" },
+    tip: "Stecker vom Original-Netzteil vorher nachmessen!"
+  },
+  trigger12: {
+    name: "Triggerkabel 12 V", price: [7, 10],
+    desc: "Zweites Triggerkabel für den Bildschirm. Läuft durch das Scharnier hoch in den Deckel.",
+    specs: { "Eingang": "USB-C PD", "Ausgang": "12 V Hohlstecker", "Stecker": "meist 5,5 × 2,1 mm" },
+    tip: "Genug Kabellänge am Scharnier lassen, sonst knickt es beim Zuklappen."
+  },
+  hdmi: {
+    name: "HDMI-Kabel (gewinkelt)", price: [5, 8],
+    desc: "Kurzes, gewinkeltes HDMI-Kabel vom ZBOX zum Bildschirm im Deckel.",
+    specs: { "Länge": "ca. 50 cm", "Stecker": "90° gewinkelt" },
+    tip: "Gewinkelte Stecker sparen im Koffer viel Platz."
+  },
+  panel: {
+    name: "Bedienpanel", price: [5, 7],
+    desc: "Kleines Panel neben der Tastatur: Ein/Aus-Kippschalter mit Schutzklappe, Status-LEDs und durchgeführte USB-Anschlüsse – sieht cool aus und ist praktisch.",
+    specs: { "Schalter": "Kippschalter mit Kappe", "LEDs": "Power + Aktivität", "Ports": "USB-C (Laden), USB-A" },
+    tip: "Die USB-Buchsen gibt es als Einbau-Verlängerungen mit Schraubflansch."
+  },
+  floor: {
+    name: "Zwischenboden", price: [3, 5],
+    desc: "Platte aus Sperrholz oder Acryl, die Tastatur und Panel trägt und die Technik darunter versteckt. Liegt auf kleinen Abstandshaltern.",
+    specs: { "Material": "Sperrholz 4–5 mm oder Acryl", "Befestigung": "Abstandshalter + Klett" },
+    tip: "Abnehmbar bauen, damit ihr später an PC und Akku kommt."
+  },
+  vents: {
+    name: "Lüftungsschlitze", price: [0, 0],
+    desc: "Schlitze in der Kofferwand direkt neben dem ZBOX, damit die Wärme des passiv gekühlten PCs entweichen kann.",
+    specs: { "Werkzeug": "Bohrer + Feile oder Stichsäge", "Optional": "5-V-Lüfter" },
+    tip: "Ein Staubschutzgitter (z. B. Fliegengitter) dahinterkleben."
+  },
+  wifi: {
+    name: "WLAN-Adapter", price: [20, 40], optional: true,
+    desc: "USB-WLAN-Adapter mit Monitor-Mode für WLAN-Analyse im eigenen Netz. Für normales Internet reicht das eingebaute WLAN des ZBOX.",
+    specs: { "Chipsatz": "z. B. MediaTek MT7612U", "Anschluss": "USB 3.0", "Antenne": "abschraubbar" },
+    tip: "Nur im eigenen Netz oder mit Erlaubnis benutzen (§ 202c StGB)."
+  },
+  misc: {
+    name: "Kleinkram", price: [5, 8],
+    desc: "Klettband, Schrauben, Abstandshalter, Kabelbinder – alles, was die Teile im Koffer festhält.",
+    specs: {}, tip: "Klettband ist euer bester Freund: hält fest, lässt sich aber wieder lösen."
+  }
+};
+
+/* ------------------------------------------------------------------
+   Grundgerüst
+------------------------------------------------------------------- */
+const canvas = document.getElementById("scene");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b0f0d);
+scene.fog = new THREE.Fog(0x0b0f0d, 140, 260);
+
+const camera = new THREE.PerspectiveCamera(40, 1, 0.5, 500);
+const HOME_POS = new THREE.Vector3(48, 46, 62);
+const homePos = () => HOME_POS.clone().multiplyScalar(window.innerWidth < 760 ? 1.55 : 1);
+const HOME_TARGET = new THREE.Vector3(0, 9, 0);
+camera.position.copy(homePos());
+
+const controls = new OrbitControls(camera, canvas);
+controls.target.copy(HOME_TARGET);
+controls.enableDamping = true;
+controls.minDistance = 25;
+controls.maxDistance = 160;
+controls.maxPolarAngle = Math.PI * 0.49;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.6;
+
+scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x1a1a1a, 0.9));
+const key = new THREE.DirectionalLight(0xffffff, 2.2);
+key.position.set(40, 80, 50);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+Object.assign(key.shadow.camera, { left: -50, right: 50, top: 50, bottom: -50, near: 10, far: 200 });
+scene.add(key);
+const rim = new THREE.DirectionalLight(0x39ff88, 0.6);
+rim.position.set(-50, 30, -40);
+scene.add(rim);
+
+// Boden mit Raster
+const ground = new THREE.Mesh(new THREE.CircleGeometry(120, 64), new THREE.MeshStandardMaterial({ color: 0x0f1512, roughness: 1 }));
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+const grid = new THREE.GridHelper(240, 48, 0x1d7a47, 0x15201b);
+grid.position.y = 0.02;
+grid.material.transparent = true;
+grid.material.opacity = 0.35;
+scene.add(grid);
+
+/* ------------------------------------------------------------------
+   Hilfsfunktionen
+------------------------------------------------------------------- */
+const pickables = [];
+const partMaterials = {}; // partId -> Set(material)
+const caseMaterials = [];
+
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.7, metalness: 0.05, ...opts });
+}
+function tag(obj, partId) {
+  obj.traverse(o => {
+    if (o.isMesh) {
+      o.userData.part = partId;
+      o.castShadow = true;
+      o.receiveShadow = true;
+      pickables.push(o);
+      (partMaterials[partId] ??= new Set()).add(o.material);
+    }
+  });
+  return obj;
+}
+function box(w, h, d, material, r = 0.3) {
+  const g = r > 0 ? new RoundedBoxGeometry(w, h, d, 3, Math.min(r, w / 2, h / 2, d / 2)) : new THREE.BoxGeometry(w, h, d);
+  return new THREE.Mesh(g, material);
+}
+function cable(points, color, radius = 0.35) {
+  const curve = new THREE.CatmullRomCurve3(points.map(p => new THREE.Vector3(...p)));
+  return new THREE.Mesh(new THREE.TubeGeometry(curve, 64, radius, 8, false), mat(color, { roughness: 0.5 }));
+}
+function textTexture(draw, w = 1024, h = 640) {
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  draw(c.getContext("2d"), w, h);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  return t;
+}
+
+/* ------------------------------------------------------------------
+   Maße
+------------------------------------------------------------------- */
+const W = 38, D = 28, H = 12, LID_H = 4, WALL = 0.8;
+const FLOOR_Y = 6.2; // Zwischenboden-Höhe
+
+const deck = new THREE.Group();
+scene.add(deck);
+
+/* ---------------- Koffer-Unterteil ---------------- */
+const caseColor = 0x23272a;
+const shellMat = mat(caseColor, { roughness: 0.55, transparent: true });
+caseMaterials.push(shellMat);
+const bottomShell = new THREE.Group();
+const baseplate = box(W, WALL, D, shellMat, 0.4);
+baseplate.position.set(0, WALL / 2, 0);
+bottomShell.add(baseplate);
+const walls = [
+  [W, H, WALL, 0, H / 2, D / 2 - WALL / 2],
+  [W, H, WALL, 0, H / 2, -D / 2 + WALL / 2],
+  [WALL, H, D, W / 2 - WALL / 2, H / 2, 0],
+  [WALL, H, D, -W / 2 + WALL / 2, H / 2, 0],
+];
+for (const [w, h, d, x, y, z] of walls) {
+  const m = box(w, h, d, shellMat, 0.35);
+  m.position.set(x, y, z);
+  bottomShell.add(m);
+}
+// Gelbe Verschlüsse vorne
+const latchMat = mat(0xf2c230, { roughness: 0.4 });
+for (const x of [-11, 11]) {
+  const l = box(4.5, 3.5, 0.9, latchMat, 0.3);
+  l.position.set(x, H - 0.6, D / 2 + 0.4);
+  bottomShell.add(l);
+}
+// Griff
+const handleMat = mat(0x151719, { roughness: 0.6 });
+const handle = new THREE.Mesh(new THREE.TorusGeometry(6, 0.8, 12, 32, Math.PI), handleMat);
+handle.position.set(0, H - 3, D / 2 + 1.6);
+handle.rotation.x = Math.PI / 2;
+handle.rotation.z = Math.PI;
+handle.scale.set(1, 1, 0.6);
+bottomShell.add(handle);
+tag(bottomShell, "case");
+deck.add(bottomShell);
+
+/* ---------------- Lüftungsschlitze (linke Wand) ---------------- */
+const vents = new THREE.Group();
+const ventMat = mat(0x050606, { roughness: 1 });
+for (let i = 0; i < 6; i++) {
+  const v = box(0.3, 0.7, 7, ventMat, 0.1);
+  v.position.set(-W / 2 - 0.02, 1.6 + i * 0.95, -4);
+  vents.add(v);
+}
+tag(vents, "vents");
+deck.add(vents);
+
+/* ---------------- Innenleben (unter dem Zwischenboden) ---------------- */
+// ZBOX
+const zbox = new THREE.Group();
+const zboxMat = mat(0x2b2e31, { metalness: 0.3, roughness: 0.45 });
+const zb = box(12.7, 4.5, 12.7, zboxMat, 0.9);
+zbox.add(zb);
+// Kühlrippen oben
+const finMat = mat(0x3a3e42, { metalness: 0.5, roughness: 0.35 });
+for (let i = -5; i <= 5; i++) {
+  const f = box(0.35, 0.4, 10.5, finMat, 0.1);
+  f.position.set(i * 1.0, 2.35, 0);
+  zbox.add(f);
+}
+// Logo-Fläche vorne + LED
+const zLogo = new THREE.Mesh(new THREE.PlaneGeometry(6, 1.2), new THREE.MeshBasicMaterial({
+  map: textTexture((g, w, h) => { g.fillStyle = "#2b2e31"; g.fillRect(0, 0, w, h); g.fillStyle = "#f2c230"; g.font = "bold 90px sans-serif"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText("ZOTAC", w / 2, h / 2); }, 512, 110)
+}));
+zLogo.position.set(-1.5, 0, 6.36);
+zbox.add(zLogo);
+const zLed = new THREE.Mesh(new THREE.SphereGeometry(0.25, 12, 12), new THREE.MeshBasicMaterial({ color: 0x3fa9ff }));
+zLed.position.set(4.5, 0, 6.36);
+zbox.add(zLed);
+zbox.position.set(-9.5, WALL + 2.25, -3.5);
+tag(zbox, "zbox");
+deck.add(zbox);
+
+// WLAN-Adapter (steckt hinten am ZBOX)
+const wifi = new THREE.Group();
+const wifiBody = box(2.2, 1, 6, mat(0x111316), 0.3);
+wifi.add(wifiBody);
+const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 7, 12), mat(0x111316));
+ant.position.set(0, 3.2, -2.6);
+ant.rotation.x = -0.25;
+wifi.add(ant);
+wifi.position.set(-12.5, WALL + 1.2, -11.2);
+wifi.rotation.y = Math.PI / 2;
+tag(wifi, "wifi");
+deck.add(wifi);
+
+// Powerbank
+const pb = new THREE.Group();
+const pbBody = box(7.5, 2.6, 15.5, mat(0x1c3b5a, { roughness: 0.35, metalness: 0.2 }), 0.8);
+pb.add(pbBody);
+const pbDisp = new THREE.Mesh(new THREE.PlaneGeometry(3, 1.4), new THREE.MeshBasicMaterial({
+  map: textTexture((g, w, h) => { g.fillStyle = "#06121d"; g.fillRect(0, 0, w, h); g.fillStyle = "#6fd3ff"; g.font = "bold 150px 'JetBrains Mono', monospace"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText("87%", w / 2, h / 2); }, 400, 200)
+}));
+pbDisp.rotation.x = -Math.PI / 2;
+pbDisp.position.set(0, 1.32, 4);
+pb.add(pbDisp);
+pb.position.set(8.5, WALL + 1.3, -1.5);
+tag(pb, "powerbank");
+deck.add(pb);
+
+// Kabel unten
+const cablesLow = new THREE.Group();
+const c20 = cable([[8.5, WALL + 1.3, -9.3], [8, 2, -11.5], [0, 1.6, -11.5], [-9.5, 2, -10.5], [-9.5, WALL + 2, -9.9]], 0x111111, 0.3);
+tag(c20, "trigger20"); cablesLow.add(c20);
+const c12 = cable([[10, WALL + 1.3, -9.3], [11, 2.2, -12], [15, 4, -12.6], [16, 9, -13], [15, 11.8, -13.2]], 0xb3261e, 0.3);
+tag(c12, "trigger12"); cablesLow.add(c12);
+const hd = cable([[-6, WALL + 2.4, -9.9], [-5, 3, -12], [-3, 6, -12.8], [-2, 9.5, -13], [-1.5, 11.8, -13.2]], 0x0d0d0d, 0.45);
+tag(hd, "hdmi"); cablesLow.add(hd);
+// Klettbänder
+const velcro = new THREE.Group();
+for (const [x, z, w] of [[8.5, -1.5, 8.2], [8.5, 4, 8.2], [-9.5, -3.5, 13.4]]) {
+  const v = box(w, 0.25, 1.4, mat(0x111a14), 0.1);
+  v.position.set(x, x > 0 ? WALL + 2.75 : WALL + 4.65, z);
+  velcro.add(v);
+}
+tag(velcro, "misc");
+cablesLow.add(velcro);
+deck.add(cablesLow);
+
+/* ---------------- Oberes Deck (Zwischenboden + Tastatur + Panel) ---------------- */
+const upper = new THREE.Group();
+deck.add(upper);
+
+// Zwischenboden
+const floorMat = mat(0x8a6a45, { roughness: 0.85 });
+const floorBoard = box(W - 2 * WALL - 0.2, 0.5, D - 2 * WALL - 0.2, floorMat, 0.1);
+floorBoard.position.y = FLOOR_Y;
+tag(floorBoard, "floor");
+upper.add(floorBoard);
+// Abstandshalter
+const spacers = new THREE.Group();
+for (const x of [-17, 17]) for (const z of [-12, 12]) {
+  const s = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, FLOOR_Y - WALL - 0.25, 12), mat(0xc9a646, { metalness: 0.7, roughness: 0.3 }));
+  s.position.set(x, (FLOOR_Y + WALL) / 2 - 0.12, z);
+  spacers.add(s);
+}
+tag(spacers, "misc");
+deck.add(spacers);
+
+// Tastatur
+const kb = new THREE.Group();
+const kbBody = box(29, 1.4, 12, mat(0x16181b, { roughness: 0.6 }), 0.5);
+kb.add(kbBody);
+const keyMat = mat(0x2a2e33, { roughness: 0.5 });
+const keyGeo = new RoundedBoxGeometry(1.45, 0.45, 1.45, 2, 0.15);
+const rows = 5, cols = 13;
+const keys = new THREE.InstancedMesh(keyGeo, keyMat, rows * cols + 1);
+const dummy = new THREE.Object3D();
+let k = 0;
+for (let r = 0; r < rows; r++) {
+  for (let c = 0; c < cols; c++) {
+    if (r === 4 && c > 3 && c < 9) continue; // Platz für Leertaste
+    dummy.position.set(-13 + c * 1.62 + (r % 2) * 0.3, 0.85, -4 + r * 1.65);
+    dummy.updateMatrix();
+    keys.setMatrixAt(k++, dummy.matrix);
+  }
+}
+dummy.position.set(-13 + 6.5 * 1.62, 0.85, -4 + 4 * 1.65);
+dummy.scale.set(5.4, 1, 1);
+dummy.updateMatrix();
+keys.setMatrixAt(k++, dummy.matrix);
+keys.count = k;
+kb.add(keys);
+const pad = new THREE.Mesh(new THREE.PlaneGeometry(5.5, 5.5), mat(0x0f1012, { roughness: 0.25, metalness: 0.2 }));
+pad.rotation.x = -Math.PI / 2;
+pad.position.set(10.7, 0.72, -0.3);
+kb.add(pad);
+for (const x of [9.3, 12.1]) {
+  const b = box(2.4, 0.35, 1.2, keyMat, 0.1);
+  b.position.set(x, 0.8, 3.9);
+  kb.add(b);
+}
+kb.position.set(-2.4, FLOOR_Y + 0.95, 4.6);
+tag(kb, "keyboard");
+upper.add(kb);
+
+// Bedienpanel
+const panel = new THREE.Group();
+const panelPlate = box(5.4, 0.6, 22, mat(0x101412, { metalness: 0.4, roughness: 0.4 }), 0.25);
+panel.add(panelPlate);
+const toggleBase = box(1.8, 0.6, 2.6, mat(0x222), 0.2);
+toggleBase.position.set(0, 0.55, 6.5);
+panel.add(toggleBase);
+const guard = box(2, 0.25, 2.8, new THREE.MeshStandardMaterial({ color: 0xff2a2a, transparent: true, opacity: 0.75, roughness: 0.2 }), 0.15);
+guard.position.set(0, 1.4, 5.7);
+guard.rotation.x = -0.9;
+panel.add(guard);
+const lever = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 1.4, 10), mat(0xdddddd, { metalness: 0.8, roughness: 0.2 }));
+lever.position.set(0, 1.3, 6.5);
+lever.rotation.x = 0.35;
+panel.add(lever);
+const ledGreen = new THREE.Mesh(new THREE.SphereGeometry(0.35, 16, 16), new THREE.MeshBasicMaterial({ color: 0x39ff88 }));
+ledGreen.position.set(-1, 0.4, 1.5);
+panel.add(ledGreen);
+const ledAmber = new THREE.Mesh(new THREE.SphereGeometry(0.35, 16, 16), new THREE.MeshBasicMaterial({ color: 0xffaa22 }));
+ledAmber.position.set(1, 0.4, 1.5);
+panel.add(ledAmber);
+for (const [z, w, d] of [[-3, 1.0, 0.45], [-6, 1.4, 0.6]]) {
+  const port = box(d * 2, 0.2, w * 1.6, mat(0x000000), 0.1);
+  port.position.set(0, 0.32, z);
+  panel.add(port);
+}
+panel.position.set(15.4, FLOOR_Y + 0.55, 0);
+tag(panel, "panel");
+upper.add(panel);
+
+// Typenschild auf dem Zwischenboden hinten
+const plate = new THREE.Mesh(new THREE.PlaneGeometry(20, 3.2), new THREE.MeshBasicMaterial({
+  map: textTexture((g, w, h) => {
+    g.fillStyle = "#0e1411"; g.fillRect(0, 0, w, h);
+    g.strokeStyle = "#39ff88"; g.lineWidth = 6; g.strokeRect(6, 6, w - 12, h - 12);
+    g.fillStyle = "#39ff88"; g.font = "bold 64px 'JetBrains Mono', monospace"; g.textBaseline = "middle";
+    g.fillText("HUMBOLDT // CYBERDECK", 34, h / 2);
+    g.fillStyle = "#7d9488"; g.font = "36px 'JetBrains Mono', monospace"; g.textAlign = "right";
+    g.fillText("IT-AG  v1", w - 34, h / 2);
+  }, 1100, 176)
+}));
+plate.rotation.x = -Math.PI / 2;
+plate.position.set(-3, FLOOR_Y + 0.27, -7.5);
+tag(plate, "floor");
+upper.add(plate);
+
+/* ---------------- Deckel mit Bildschirm ---------------- */
+const lidPivot = new THREE.Group();
+lidPivot.position.set(0, H, -D / 2);
+deck.add(lidPivot);
+
+const lidShell = new THREE.Group();
+const lidTop = box(W, WALL, D, shellMat, 0.4);
+lidTop.position.set(0, LID_H - WALL / 2, D / 2);
+lidShell.add(lidTop);
+for (const [w, h, d, x, y, z] of [
+  [W, LID_H, WALL, 0, LID_H / 2, D - WALL / 2],
+  [W, LID_H, WALL, 0, LID_H / 2, WALL / 2],
+  [WALL, LID_H, D, W / 2 - WALL / 2, LID_H / 2, D / 2],
+  [WALL, LID_H, D, -W / 2 + WALL / 2, LID_H / 2, D / 2],
+]) {
+  const m = box(w, h, d, shellMat, 0.35);
+  m.position.set(x, y, z);
+  lidShell.add(m);
+}
+// Rippen auf der Außenseite
+for (const x of [-12, 0, 12]) {
+  const r = box(1.2, 0.6, D - 4, shellMat, 0.25);
+  r.position.set(x, LID_H + 0.25, D / 2);
+  lidShell.add(r);
+}
+// Scharniere
+for (const x of [-13, 13]) {
+  const h = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 5, 16), mat(0x9aa0a6, { metalness: 0.8, roughness: 0.3 }));
+  h.rotation.z = Math.PI / 2;
+  h.position.set(x, 0, -0.3);
+  lidShell.add(h);
+}
+tag(lidShell, "case");
+lidPivot.add(lidShell);
+
+// Monitor
+const monitor = new THREE.Group();
+const bezel = box(25.6, 1.6, 17.2, mat(0x0c0d0e, { roughness: 0.4 }), 0.5);
+monitor.add(bezel);
+
+let termLines = [];
+const screenCanvas = document.createElement("canvas");
+screenCanvas.width = 1280; screenCanvas.height = 800;
+const sctx = screenCanvas.getContext("2d");
+const screenTex = new THREE.CanvasTexture(screenCanvas);
+screenTex.colorSpace = THREE.SRGBColorSpace;
+const SCRIPT = [
+  ["$", "neofetch --off"],
+  [">", "OS: Kali GNU/Linux Rolling x86_64"],
+  [">", "Host: ZOTAC ZBOX CI320 nano"],
+  [">", "CPU: Intel Celeron N2930 (4) @ 2.16GHz"],
+  [">", "Memory: 1.2GiB / 7.7GiB"],
+  ["$", "ip -brief addr"],
+  [">", "lo        UNKNOWN  127.0.0.1/8"],
+  [">", "wlan0     UP       192.168.178.42/24"],
+  ["$", "nmap -sn 192.168.178.0/24   # eigenes Netz!"],
+  [">", "Nmap done: 256 IP addresses (6 hosts up)"],
+  ["$", "echo \"Hallo vom Humboldt-Gymnasium\""],
+  [">", "Hallo vom Humboldt-Gymnasium"],
+];
+let scriptIdx = 0, charIdx = 0, lastTick = 0;
+function drawScreen(t) {
+  const w = screenCanvas.width, h = screenCanvas.height;
+  sctx.fillStyle = "#050806"; sctx.fillRect(0, 0, w, h);
+  // Titelleiste
+  sctx.fillStyle = "#1b2420"; sctx.fillRect(0, 0, w, 52);
+  sctx.fillStyle = "#39ff88"; sctx.font = "bold 28px 'JetBrains Mono', monospace"; sctx.textBaseline = "middle";
+  sctx.fillText("kali@cyberdeck: ~", 24, 27);
+  for (const [i, c] of ["#ff5f57", "#febc2e", "#28c840"].entries()) { sctx.fillStyle = c; sctx.beginPath(); sctx.arc(w - 40 - i * 36, 26, 10, 0, Math.PI * 2); sctx.fill(); }
+  sctx.font = "30px 'JetBrains Mono', monospace";
+  sctx.textBaseline = "top";
+  const lines = termLines.slice(-17);
+  lines.forEach((l, i) => {
+    const y = 76 + i * 42;
+    if (l.kind === "$") {
+      sctx.fillStyle = "#39ff88"; sctx.fillText("┌──(kali㉿deck)─$", 24, y);
+      sctx.fillStyle = "#e9f5ee"; sctx.fillText(l.text, 340, y);
+    } else {
+      sctx.fillStyle = "#8fb5a2"; sctx.fillText(l.text, 24, y);
+    }
+  });
+  if (Math.floor(t / 500) % 2 === 0 && lines.length) {
+    const last = lines[lines.length - 1];
+    const x = (last.kind === "$" ? 340 : 24) + sctx.measureText(last.text).width + 4;
+    sctx.fillStyle = "#39ff88"; sctx.fillRect(x, 76 + (lines.length - 1) * 42, 16, 32);
+  }
+  // Scanlines
+  sctx.fillStyle = "rgba(0,0,0,0.18)";
+  for (let y = 0; y < h; y += 4) sctx.fillRect(0, y, w, 1);
+  screenTex.needsUpdate = true;
+}
+function tickTerminal(t) {
+  if (t - lastTick < 55) return;
+  lastTick = t;
+  const [kind, text] = SCRIPT[scriptIdx];
+  if (kind === ">") {
+    termLines.push({ kind, text });
+    scriptIdx++;
+  } else {
+    if (charIdx === 0) termLines.push({ kind, text: "" });
+    charIdx++;
+    termLines[termLines.length - 1].text = text.slice(0, charIdx);
+    if (charIdx >= text.length) { charIdx = 0; scriptIdx++; lastTick = t + 300; }
+  }
+  if (scriptIdx >= SCRIPT.length) { scriptIdx = 0; lastTick = t + 2500; termLines.push({ kind: ">", text: "" }); }
+}
+
+const screen = new THREE.Mesh(new THREE.PlaneGeometry(21.8, 13.6), new THREE.MeshBasicMaterial({ map: screenTex, toneMapped: false }));
+screen.rotation.x = Math.PI / 2;
+screen.position.y = -0.81;
+monitor.add(screen);
+// Halterungswinkel
+for (const x of [-11, 11]) {
+  const br = box(1.5, 2.2, 3, mat(0x555a60, { metalness: 0.6 }), 0.2);
+  br.position.set(x, 1.4, 0);
+  monitor.add(br);
+}
+monitor.position.set(0, LID_H - WALL - 1.4, D / 2 + 0.5);
+tag(monitor, "monitor");
+lidPivot.add(monitor);
+
+// Kabel im Deckel (HDMI + 12 V)
+const lidCables = new THREE.Group();
+const hdLid = cable([[-1.5, -0.2, 0.6], [-1.5, 0.8, 1.6], [-2, 1.2, 3], [-3, 1.0, 5.6]], 0x0d0d0d, 0.45);
+tag(hdLid, "hdmi"); lidCables.add(hdLid);
+const c12Lid = cable([[15, -0.2, 0.6], [14.5, 1.0, 2], [12.5, 1.1, 4], [11.5, 1.0, 6.5]], 0xb3261e, 0.3);
+tag(c12Lid, "trigger12"); lidCables.add(c12Lid);
+lidPivot.add(lidCables);
+
+/* ------------------------------------------------------------------
+   Zustand + Animation
+------------------------------------------------------------------- */
+const state = { lidOpen: true, explode: false, xray: false };
+let lidAngle = 0, lidTarget = THREE.MathUtils.degToRad(105);
+let explodeT = 0, xrayT = 0;
+lidPivot.rotation.x = -lidAngle;
+
+const btnLid = document.getElementById("btnLid");
+const btnExplode = document.getElementById("btnExplode");
+const btnXray = document.getElementById("btnXray");
+const btnRotate = document.getElementById("btnRotate");
+
+function setPressed(btn, on, labelOn, labelOff) {
+  btn.setAttribute("aria-pressed", on);
+  if (labelOn) btn.textContent = on ? labelOn : labelOff;
+}
+btnLid.onclick = () => {
+  state.lidOpen = !state.lidOpen;
+  lidTarget = state.lidOpen ? THREE.MathUtils.degToRad(105) : 0;
+  setPressed(btnLid, state.lidOpen, "Deckel offen", "Deckel zu");
+};
+btnExplode.onclick = () => {
+  state.explode = !state.explode;
+  setPressed(btnExplode, state.explode);
+  if (state.explode && !state.lidOpen) btnLid.onclick();
+};
+btnXray.onclick = () => { state.xray = !state.xray; setPressed(btnXray, state.xray); };
+btnRotate.onclick = () => { controls.autoRotate = !controls.autoRotate; setPressed(btnRotate, controls.autoRotate); };
+
+let camAnim = null;
+function flyTo(pos, target, ms = 900) {
+  camAnim = { p0: camera.position.clone(), t0: controls.target.clone(), p1: pos.clone(), t1: target.clone(), start: performance.now(), ms };
+}
+document.getElementById("btnReset").onclick = () => { select(null); flyTo(homePos(), HOME_TARGET); };
+
+/* ------------------------------------------------------------------
+   Teileliste + Infos
+------------------------------------------------------------------- */
+const listEl = document.getElementById("partList");
+const order = ["zbox", "monitor", "keyboard", "powerbank", "trigger20", "trigger12", "hdmi", "case", "floor", "panel", "vents", "misc", "wifi"];
+const euro = ([a, b]) => a === b ? (a === 0 ? "vorhanden" : `${a} €`) : `${a}–${b} €`;
+for (const id of order) {
+  const p = PARTS[id];
+  const li = document.createElement("li");
+  li.dataset.part = id;
+  if (p.optional) li.classList.add("optional");
+  const priceLabel = id === "zbox" ? "vorhanden" : id === "vents" ? "selbst" : euro(p.price);
+  li.innerHTML = `<span class="name">${p.name}</span><span class="price">${priceLabel}</span>`;
+  li.onclick = () => select(id, true);
+  listEl.appendChild(li);
+}
+let lo = 0, hi = 0;
+for (const p of Object.values(PARTS)) if (!p.optional) { lo += p.price[0]; hi += p.price[1]; }
+document.getElementById("total").textContent = `${lo}–${hi} €`;
+document.getElementById("perPerson").textContent = `${Math.round(lo / 2)}–${Math.round(hi / 2)} €`;
+
+const info = document.getElementById("info");
+const infoBody = document.getElementById("infoBody");
+info.querySelector(".close").onclick = () => select(null);
+
+let selected = null, hovered = null;
+const HIGHLIGHT = new THREE.Color(0x39ff88);
+
+function setGlow(partId, amount) {
+  if (!partId || !partMaterials[partId]) return;
+  for (const m of partMaterials[partId]) {
+    if (!m.emissive) continue;
+    m.emissive.copy(HIGHLIGHT);
+    m.emissiveIntensity = amount;
+  }
+}
+function refreshGlow() {
+  for (const id of Object.keys(partMaterials)) setGlow(id, 0);
+  if (hovered && hovered !== selected) setGlow(hovered, 0.18);
+  if (selected) setGlow(selected, 0.38);
+}
+
+function focusPoint(partId) {
+  const b = new THREE.Box3();
+  let any = false;
+  for (const m of pickables) if (m.userData.part === partId) { b.expandByObject(m); any = true; }
+  return any ? b.getCenter(new THREE.Vector3()) : HOME_TARGET.clone();
+}
+
+function select(id, fly = false) {
+  selected = id;
+  for (const li of listEl.children) li.classList.toggle("active", li.dataset.part === id);
+  refreshGlow();
+  if (!id) { info.classList.add("hidden"); return; }
+  const p = PARTS[id];
+  const hidden = ["zbox", "powerbank", "trigger20", "wifi", "vents", "misc"].includes(id);
+  if (hidden && !state.explode) btnExplode.onclick();
+  const specs = Object.entries(p.specs).map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+  const priceTxt = id === "zbox" ? "schon vorhanden" : id === "vents" ? "selbst bohren" : euro(p.price);
+  infoBody.innerHTML = `
+    <h3>${p.name}</h3>
+    <span class="tag ${p.optional ? "opt" : ""}">${p.optional ? "optional · " : ""}${priceTxt}</span>
+    <p>${p.desc}</p>
+    ${specs ? `<dl>${specs}</dl>` : ""}
+    ${p.tip ? `<div class="tip">${p.tip}</div>` : ""}`;
+  info.classList.remove("hidden");
+  if (fly) {
+    controls.autoRotate = false; setPressed(btnRotate, false);
+    setTimeout(() => {
+      const t = focusPoint(id);
+      const dir = camera.position.clone().sub(controls.target).setY(0).normalize();
+      dir.y = 0.9; dir.normalize();
+      flyTo(t.clone().add(dir.multiplyScalar(window.innerWidth < 760 ? 80 : 55)), t);
+    }, 350);
+  }
+}
+
+/* ------------------------------------------------------------------
+   Maus / Touch
+------------------------------------------------------------------- */
+const ray = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+const tooltip = document.getElementById("tooltip");
+let downAt = null;
+
+function pick(ev) {
+  const r = canvas.getBoundingClientRect();
+  ndc.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  const hits = ray.intersectObjects(pickables, false).filter(h => h.object.visible && (h.object.material.opacity ?? 1) > 0.25);
+  return hits.length ? hits[0].object.userData.part : null;
+}
+canvas.addEventListener("pointermove", ev => {
+  if (ev.pointerType !== "mouse") return;
+  const id = pick(ev);
+  if (id !== hovered) { hovered = id; refreshGlow(); }
+  canvas.style.cursor = id ? "pointer" : "grab";
+  if (id) {
+    tooltip.style.display = "block";
+    tooltip.textContent = PARTS[id].name;
+    tooltip.style.left = ev.clientX + "px";
+    tooltip.style.top = ev.clientY + "px";
+  } else tooltip.style.display = "none";
+});
+canvas.addEventListener("pointerleave", () => { hovered = null; tooltip.style.display = "none"; refreshGlow(); });
+canvas.addEventListener("pointerdown", ev => { downAt = { x: ev.clientX, y: ev.clientY }; });
+canvas.addEventListener("pointerup", ev => {
+  if (!downAt || Math.hypot(ev.clientX - downAt.x, ev.clientY - downAt.y) > 6) return;
+  const id = pick(ev);
+  select(id);
+});
+controls.addEventListener("start", () => { camAnim = null; });
+
+/* ------------------------------------------------------------------
+   Render-Loop
+------------------------------------------------------------------- */
+function resize() {
+  const w = window.innerWidth, h = window.innerHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.fov = w < 760 ? 55 : 40;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener("resize", resize);
+resize();
+
+const ease = t => 1 - Math.pow(1 - t, 3);
+let lastFrame = performance.now();
+function animate(t) {
+  requestAnimationFrame(animate);
+  const dt = Math.min(0.1, (t - lastFrame) / 1000);
+  lastFrame = t;
+  const k = 1 - Math.exp(-dt * 5);
+  lidAngle += (lidTarget - lidAngle) * k;
+  lidPivot.rotation.x = -lidAngle;
+  explodeT += ((state.explode ? 1 : 0) - explodeT) * k;
+  xrayT += ((state.xray ? 1 : 0) - xrayT) * k;
+
+  // Explosionsansicht: Zwischenboden + Tastatur hoch, Deckel nach hinten
+  upper.position.y = explodeT * 14;
+  upper.position.z = explodeT * 3;
+  lidPivot.position.y = H + explodeT * 10;
+  lidPivot.position.z = -D / 2 - explodeT * 8;
+  lidCables.visible = explodeT < 0.05;
+
+  // Röntgen: Koffer durchsichtig
+  const caseOpacity = 1 - xrayT * 0.82 - explodeT * 0.35 * (1 - xrayT);
+  for (const m of caseMaterials) {
+    m.opacity = caseOpacity;
+    m.depthWrite = caseOpacity > 0.95;
+  }
+  floorMat.transparent = true;
+  floorMat.opacity = 1 - xrayT * 0.6;
+  floorMat.depthWrite = xrayT < 0.05;
+
+  if (camAnim) {
+    const p = Math.min(1, (performance.now() - camAnim.start) / camAnim.ms);
+    const e = ease(p);
+    camera.position.lerpVectors(camAnim.p0, camAnim.p1, e);
+    controls.target.lerpVectors(camAnim.t0, camAnim.t1, e);
+    if (p >= 1) camAnim = null;
+  }
+
+  // LED-Blinken
+  ledAmber.visible = Math.floor(t / 300) % 3 !== 0;
+
+  tickTerminal(t);
+  drawScreen(t);
+  controls.update();
+  renderer.render(scene, camera);
+}
+document.getElementById("loading").remove();
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
